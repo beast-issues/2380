@@ -17,6 +17,9 @@
 #if !defined(WITHOUT_TLS)
 #  define WITHOUT_TLS 0
 #endif // !defined(WITHOUT_TLS)
+#if !defined(ASIO_STREAMS)
+#  define ASIO_STREAMS 0
+#endif // !defined(ASIO_STREAMS)
 
 #define TEST_CASE_HOSTNAME "localhost"
 #define TEST_CASE_SERVICE "8899"
@@ -43,6 +46,14 @@
 "HiOqjizpYqi4QAFVYCUv3NI=" "\n" \
 "-----END CERTIFICATE-----"
 
+#if ASIO_STREAMS
+using tcp_layer = boost::asio::ip::tcp::socket;
+using ssl_layer = boost::asio::ssl::stream<tcp_layer>;
+#else
+using tcp_layer = boost::beast::tcp_stream;
+using ssl_layer = boost::beast::ssl_stream<boost::beast::tcp_stream>;
+#endif
+
 /// \brief Websocket test client
 /// Connects to host TEST_CASE_HOSTNAME on port TEST_CASE_SERVICE and
 /// continually sends (and reads) data.
@@ -50,9 +61,9 @@ class ws_test_client {
 public:
 	using executor_type = boost::asio::any_io_executor;
 #if WITHOUT_TLS
-	using stream_type = boost::beast::websocket::stream<boost::beast::tcp_stream>;
+	using stream_type = boost::beast::websocket::stream<tcp_layer>;
 #else
-	using stream_type = boost::beast::websocket::stream<boost::beast::ssl_stream<boost::beast::tcp_stream>>;
+	using stream_type = boost::beast::websocket::stream<ssl_layer>;
 #endif // WITHOUT_TLS
 
 public:
@@ -93,8 +104,15 @@ private:
 
 		const auto results = co_await resolver.async_resolve(TEST_CASE_HOSTNAME, TEST_CASE_SERVICE, boost::asio::use_awaitable);
 
+#if !ASIO_STREAMS
 		boost::beast::get_lowest_layer(stream()).expires_never();
+#endif
+#if !ASIO_STREAMS
 		co_await boost::beast::get_lowest_layer(stream()).async_connect(results, boost::asio::use_awaitable);
+#else
+		co_await boost::asio::async_connect(boost::beast::get_lowest_layer(stream()) ,results, boost::asio::use_awaitable);
+#endif
+
 #if !WITHOUT_TLS
 		co_await stream().next_layer().async_handshake(boost::asio::ssl::stream_base::client, boost::asio::use_awaitable);
 #endif // !WITHOUT_TLS
@@ -189,9 +207,9 @@ class ws_test_server {
 public:
 	using executor_type = boost::asio::any_io_executor;
 #if WITHOUT_TLS
-	using stream_type = boost::beast::websocket::stream<boost::beast::tcp_stream>;
+	using stream_type = boost::beast::websocket::stream<tcp_layer>;
 #else
-	using stream_type = boost::beast::websocket::stream<boost::beast::ssl_stream<boost::beast::tcp_stream>>;
+	using stream_type = boost::beast::websocket::stream<ssl_layer>;
 #endif
 
 public:
@@ -263,8 +281,10 @@ private:
 #endif
 		boost::beast::flat_buffer buffer;
 
+#if !ASIO_STREAMS
 		// Set timeout.
 		boost::beast::get_lowest_layer(ws).expires_after(std::chrono::seconds(30));
+#endif
 
 #if !WITHOUT_TLS
 		// Perform TLS handshake.
@@ -272,9 +292,10 @@ private:
 #endif // !WITHOUT_TLS
 
 		// Turn off timeout on tcp_stream, because the websocket stream has its own
+#if !ASIO_STREAMS
 		// timeout system.
 		boost::beast::get_lowest_layer(ws).expires_never();
-
+#endif
 		// Set suggested timeout settings for websocket.
 		ws.set_option(
 			boost::beast::websocket::stream_base::timeout::suggested(boost::beast::role_type::server)
