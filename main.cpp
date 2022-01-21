@@ -5,6 +5,7 @@
 
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/co_spawn.hpp>
+#include <boost/asio/strand.hpp>
 #include <boost/asio/detached.hpp>
 #include <boost/asio/thread_pool.hpp>
 #include <boost/asio/use_future.hpp>
@@ -339,8 +340,8 @@ int main() {
 			boost::asio::thread_pool pool{ num_threads };
 			auto work_guard = boost::asio::make_work_guard(ctx);
 
-			ws_test_server server{ ctx.get_executor() };
-			ws_test_client client{ ctx.get_executor() };
+			ws_test_server server{ boost::asio::make_strand(ctx.get_executor()) };
+			ws_test_client client{ boost::asio::make_strand(ctx.get_executor()) };
 			// The issue gets triggered within the first few packages that were
 			// exchanged. For simplicity we just cancel the current attempt
 			// with a timer.
